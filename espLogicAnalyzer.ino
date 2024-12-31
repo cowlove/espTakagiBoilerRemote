@@ -1,12 +1,14 @@
 #ifdef UBUNTU
 #include "ESP32sim_ubuntu.h"
+#define ADC1_CHANNEL_1 0
+int adc1_get_raw(int) { return 0; }
 #else // #ifndef UBUNTU
 #include <Adafruit_NeoPixel.h> 
+#include "driver/adc.h"
 #endif
 
 #include "RollingLeastSquares.h"
 //Adafruit_NeoPixel pixels(1, 21, NEO_GRB + NEO_KHZ800);
-#include "driver/adc.h"
 
 unsigned long lastTimePrinted;
 unsigned long loopTime = 0;
@@ -77,14 +79,11 @@ uint32_t lastMicro = 0;
 int reads = 0;
 
 
-const int rmsStableThreshold = 50;
-const int minDifference = 600;
-const int histSize = 16;
+const int threshold = 2000;
+const int deadband = 20;
+const int histSize = 6;
 
-uint32_t lastStableTime = 0;
-int lastStableValue = 0;
-int lastRms = 0;
-int lastValue = 0;
+uint32_t lastChangeTime = 0;
 
 struct Delay {
   static const int size = histSize;
@@ -95,6 +94,7 @@ struct Delay {
     data[index] = val;
     if (++index >= size)
       index = 0;
+    return rval;
   }
 } dly;
 
@@ -119,34 +119,29 @@ struct Averager {
       sum += (((int)data[(index + i) % size]) - ((int)(data[(index + i + 1) % size])));
     return abs(sum) / size;
   }
-} avg;
+} avg1, avg2;
 
+bool toggle = 0;
 void loop() {
-  uint16_t x = adc1_get_raw(ADC1_CHANNEL_1);//analogRead(1);
-  //avg.add(delay.delay(x));
-  avg.add(x);
-  reads++;
-  int rms = avg.error() + 1;
-  int currentAvg = avg.average();
   uint32_t now = micros();
+  uint16_t x = adc1_get_raw(ADC1_CHANNEL_1);//analogRead(1);
+
+  avg1.add(dly.delay(x));
+  avg2.add(x);
+  reads++;
+
   if (lastMicro / 1000000 != now / 1000000) {  
-    printf("0 0 poop %04d %04d %04d %d %d %d\n", currentAvg, rms, x, reads, avg.index, (int)avg.data[0]);
+    //printf("0 0 poop %04d %04d %d\n", avg1.average(), x, reads);
     reads = 0;
   }
 
   //printf("%08d 0 %04d\n", micros(), x);
-  if (0 && rms < rmsStableThreshold && abs(lastStableValue - currentAvg) > minDifference) { 
-    printf("%d %d\n", currentAvg / 10, (int)(now - lastStableTime));
-    lastStableTime = now;
-    lastStableValue = currentAvg;
-
-  }
-  if (rms > rmsStableThreshold && lastRms < rmsStableThreshold) {
-    printf("%d %d\n", lastValue / 10, (int)(now - lastStableTime));
-    lastStableTime = now;
+  if ((toggle && (avg1.average() - deadband > threshold) && (avg2.average() < threshold)) ||
+      (!toggle && (avg1.average() + deadband < threshold) && (avg2.average() > threshold))) {
+    toggle = !toggle; 
+    printf("%d %d\n", avg1.average() / 1, (int)(now - lastChangeTime) / 1);
+    lastChangeTime = now;
   }
   lastMicro = now;
-  lastValue = currentAvg;
-  lastRms = rms;
 }
 #endif //I2S
