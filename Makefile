@@ -5,7 +5,10 @@ CHIP=esp32
 ifeq ($(BOARD),esp32s3)
 	CDC_ON_BOOT = 1
 	UPLOAD_PORT ?= /dev/ttyACM0
+else 
+	BUILD_EXTRA_FLAGS += -DI2S
 endif
+
 
 GIT_VERSION := "$(shell git describe --abbrev=4 --dirty --always --tags)"
 BUILD_EXTRA_FLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\"
@@ -18,7 +21,7 @@ csim:
 include ${HOME}/Arduino/libraries/makeEspArduino/makeEspArduino.mk
 
 fixtty:
-	stty -F ${UPLOAD_PORT} -hupcl -crtscts -echo raw 115200 
+	stty -F ${UPLOAD_PORT} -hupcl -crtscts -echo raw 921600 
 
 cat:    fixtty
 	cat ${UPLOAD_PORT}
