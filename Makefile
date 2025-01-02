@@ -1,6 +1,7 @@
 BOARD=esp32s3
 #VERBOSE=1::
 CHIP=esp32
+OTA_ADDR=192.168.68.135
 
 ifeq ($(BOARD),esp32s3)
 	CDC_ON_BOOT = 1
@@ -25,6 +26,12 @@ fixtty:
 
 cat:    fixtty
 	cat ${UPLOAD_PORT}
+
+
+socat:  
+	socat udp-recvfrom:9000,fork - 
+mocat:
+	mosquitto_sub -h 192.168.5.1 -t "${MAIN_NAME}/#" -F "%I %t %p"   
 
 uc:
 	make upload && make cat

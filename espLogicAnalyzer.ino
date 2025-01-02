@@ -1,3 +1,4 @@
+#include "jimlib.h"
 #ifdef UBUNTU
 #include "ESP32sim_ubuntu.h"
 #define ADC1_CHANNEL_1 0
@@ -68,9 +69,14 @@ void loop() {
 }
 
 #else
+
+JStuff j;
+
 void setup() {
     Serial.begin(921600);
     analogRead(1);
+    j.mqtt.active = false;
+    j.jw.debug = true;
 }
 
 //RollingLeastSquaresStatic<int, float, 4> avg;
@@ -123,6 +129,12 @@ struct Averager {
 
 bool toggle = 0;
 void loop() {
+  //j.mqtt.active = false;
+  //j.jw.debug = true;
+
+  j.run();
+  if (j.jw.updateInProgress)
+    return;
   uint32_t now = micros();
   uint16_t x = adc1_get_raw(ADC1_CHANNEL_1);//analogRead(1);
 
@@ -131,7 +143,7 @@ void loop() {
   reads++;
 
   if (lastMicro / 1000000 != now / 1000000) {  
-    //printf("0 0 poop %04d %04d %d\n", avg1.average(), x, reads);
+    //OUT("0 0 poop %04d %04d %d", avg1.average(), x, reads);
     reads = 0;
   }
 
@@ -139,7 +151,7 @@ void loop() {
   if ((toggle && (avg1.average() - deadband > threshold) && (avg2.average() < threshold)) ||
       (!toggle && (avg1.average() + deadband < threshold) && (avg2.average() > threshold))) {
     toggle = !toggle; 
-    printf("%d %d\n", avg1.average() / 1, (int)(now - lastChangeTime) / 1);
+    //OUT("%d %d", avg1.average() / 1, (int)(now - lastChangeTime) / 1);
     lastChangeTime = now;
   }
   lastMicro = now;

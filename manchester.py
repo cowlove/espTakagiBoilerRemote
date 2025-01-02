@@ -41,9 +41,6 @@ for line in file:
     timesum = timesum + t
 
     if (t > 2000):
-        starting = uptrans = True
-        fpack = cpack = False
-        clock = True
         if (args.raw):
             print ("2000 1800 CF")
             print ("2000 1800 CT")
@@ -51,10 +48,16 @@ for line in file:
             if bits > 0:
                 print(f" [{bits}]   ", end="")
                 for i in range(bits, maxpacketlen + 1): print(" ", end="")
-            if t > 140000:
+            if cpack:
                 print("")
         if (bits > maxpacketlen): maxpacketlen = bits
+
         bits = 0
+        starting = uptrans = True
+        fpack = cpack = False
+        clock = True
+
+
         continue
     
     if (v < 1600): fpack = True
@@ -116,6 +119,6 @@ for line in file:
                 if longpulse: print("1", end="")
                 else: print("0", end="")
                 bits = bits + 1
-
+                if (bits % 4 == 0): print (" ", end="")
     lineno = lineno + 1
 print("")
