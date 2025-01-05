@@ -75,8 +75,9 @@ JStuff j;
 void setup() {
     Serial.begin(921600);
     analogRead(1);
-    j.mqtt.active = false;
+    j.mqtt.active = true;
     j.jw.debug = true;
+    pinMode(1, OUTPUT);
 }
 
 //RollingLeastSquaresStatic<int, float, 4> avg;
@@ -127,13 +128,133 @@ struct Averager {
   }
 } avg1, avg2;
 
-bool toggle = 0;
-void loop() {
-  //j.mqtt.active = false;
-  //j.jw.debug = true;
+Averager avg;
+int vlevel = 2100;
+bool waitFor(bool level, uint32_t tmo) { 
+  uint32_t startMicros = micros();
+  while(true) { 
+    uint32_t now = micros();
+    uint16_t x = adc1_get_raw(ADC1_CHANNEL_1);//analogRead(1);
+    avg.add(x);
+    if (level && avg.average() > vlevel) return true;
+    if (!level && avg.average() < vlevel) return true;
+    if (now - startMicros > tmo) return false;
+  }
+}
 
+uint32_t readPacket(uint32_t leadin, int pulsewidth) { 
+  uint32_t startMicros = micros();
+  uint32_t lastLow = startMicros;
+  int tmo = 500000;
+  while(true) { 
+    uint32_t now = micros();
+    uint16_t x = adc1_get_raw(ADC1_CHANNEL_1);//analogRead(1);
+    avg.add(x);
+    if (avg.average() < vlevel) 
+      lastLow = now;
+
+    if (now - startMicros > tmo) {
+      OUT("timeout avg %d, sinceLow %d", avg.average(), now - lastLow); 
+      return -1;
+    }
+
+    if (now - lastLow > leadin)
+      break;
+  }
+  uint32_t rval = 0;
+  int bits = 0;
+  while(1) { 
+    if (!waitFor(0, (bits == 0) ? tmo : 2000))
+      break;
+    uint32_t startPulse = micros();
+    if (!waitFor(1, 2500))
+      break;
+    uint32_t endPulse = micros();
+    rval = rval << 1;
+    if (endPulse - startPulse > pulsewidth) /*680*/
+      rval = rval | 0x1;
+    bits++;
+  }
+  //OUT("bits %d", bits);
+  return rval;
+}
+
+bool toggle = 0;
+
+void sendPacket(uint32_t data, int bytes) { 
+  int longWidth = 850;
+  int shortWidth = 300;
+  int period = 1980;
+  for(int i = 0; i < bytes; i++) {
+    bool longPulse = data & (0x1 << (bytes - 1 - i));
+    uint32_t startPulse = micros();
+    if (longPulse) {
+      digitalWrite(1, 1);
+      delayUs(longWidth);
+      digitalWrite(1, 0);
+      delayUs(period - longWidth);
+    } else { 
+      digitalWrite(1, 1);
+      delayUs(shortWidth);
+      digitalWrite(1, 0);
+      delayUs(period - shortWidth);
+    }
+  }
+  OUT("SEND:          %08x", data);
+}
+
+int readAdcAverage(int count) { 
+  int sum = 0;
+  for(int i = 0; i < count; i++) {
+    sum += adc1_get_raw(ADC1_CHANNEL_1);//analogRead(1);
+  }
+  return sum / count;
+}
+
+CLI_VARIABLE_HEXINT(cmd, 0x000a7247);
+
+
+void loop() {
   j.run();
-  if (j.jw.updateInProgress)
+  int before, after;
+
+  if (millis() == 30000 || j.jw.updateInProgress)
+    return;
+  uint32_t pkt1 = readPacket(10000, 900);
+  if ((pkt1 & 0x80000) == 0x80000) {
+      delay(3);
+      if ((millis() / 15000) % 2 == 1)
+        sendPacket(cmd, 20);
+      else
+        sendPacket(cmd, 20);
+  }
+  
+ #if 0 
+  uint32_t pkt2 = readPacket(1000, 550);
+  uint32_t pkt3 = readPacket(1000, 900);
+
+  delayUs(2000);
+  sendPacket(0x000ab247, 20);
+
+  if (1) { 
+    delay(3);
+    for (int i = 0; i < 3; i++) {
+      before = readAdcAverage(20);
+      digitalWrite(1, 1);
+      delayUs(500);
+      after = readAdcAverage(20);
+      digitalWrite(1, 0);
+      delayUs(700);
+    }
+  //  OUT("pulse %d %d diff %d", before, after, before-after);
+  }
+#endif
+  OUT("RECV: %08x", (int)pkt1);
+}
+
+void loop2() {
+  j.run();
+  if (j.jw.updateInProgress || millis() > 30000)
     return;
   uint32_t now = micros();
   uint16_t x = adc1_get_raw(ADC1_CHANNEL_1);//analogRead(1);

@@ -1,0 +1,88 @@
+# Reset furnace and set to 122 degF
+./mpub set CMD=a3641; sleep 3; ./mpub set CMD=a3a41; sleep 3; ./mpub set CMD=ad247
+# Turn up furnace to 167 degF
+./mpub set CMD=af243
+
+
+Console commands:
+000a0243    set temp - 99 deg (min)
+000ad247    set temp 122
+000a3243    set temp 131
+000ab247    set temp 140
+000a7247    set temp 158
+000af243    set temp 167
+
+000af641    turn off (w temp at 167), 3 packets
+000afa41    turn on (w temp at 167), 3 packets
+
+00090152    request inlet temp
+00090350    request outlet temp
+000902d3    request flow rate
+
+
+
+Furnace packets:
+000d8a8d    response inlet temp 70
+000d8a8d    response outlet temp 70
+000d800c    response flow rate 0
+000c8f25    response furnace on set temp 167
+000c0f21    response furnace off set temp 167, seems like the 8 bit is power indicator
+
+000f8645    response inlet temp 100 furnace burning
+
+000f9723    inlet temp at really hi temp like 168
+
+000c8856 000a3243 000082f6 ERROR 21 condition 
+000c0321 000a3641 000002f2 power off button during error condition 
+000c0321 000a3a41 000092f2 power back on button during error condition 
+
+
+furnace packets inlet temp rampup from 70-125 or so 
+seems like the 0x0002 0000 bit is the burning indicator light 
+seems like only the 0x0000 0003 low order bits change for cksum
+at least 0x0000 fe00 bits are used for data, maybe 0x0000 0100 also dunno
+
+000f8a85
+000f8d47
+000f8b47
+000f8f45
+000f8685
+000f8e87
+000f8187
+000f8985
+000f8585
+000f8d87
+000f8585
+000f8d87
+000f8585
+000f8985
+000f8585
+000f8d87
+000f8385
+000f8b87
+000f8787
+000f8f85
+000f8045
+000f8847
+000f8447
+000f8c45
+000f8247
+000f8a45
+000f8645
+000f8e47
+000f8645
+000f8e47
+000f8147
+000f8945
+000f8545
+000f8d47
+000f8345
+000f8b47
+000f8747
+000f8f45
+000f80c4
+000f88c6
+000f84c6
+000f8cc4
+000f82c6
+
