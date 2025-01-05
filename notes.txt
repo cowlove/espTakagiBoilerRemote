@@ -3,6 +3,17 @@
 # Turn up furnace to 167 degF
 ./mpub set CMD=af243
 
+cut -d ' ' -f4-8 furnace.mqtt.out | tr ' ' '\n'  | sort | uniq | wc
+16
+
+power level vs encoded temps
+PL  OUTPUT  INPUT SHUTOFF 
+15  75 
+14  70
+13  54
+12  55
+11  53      50 
+
 
 Console commands:
 000a0243    set temp - 99 deg (min)

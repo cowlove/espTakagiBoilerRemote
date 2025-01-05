@@ -175,7 +175,7 @@ uint32_t readPacket(uint32_t leadin, int pulsewidth) {
       rval = rval | 0x1;
     bits++;
   }
-  //OUT("bits %d", bits);
+  //OUT("RECV: %08x %d", rval, bits);
   return rval;
 }
 
@@ -200,7 +200,7 @@ void sendPacket(uint32_t data, int bytes) {
       delayUs(period - shortWidth);
     }
   }
-  OUT("SEND:          %08x", data);
+  //OUT("SEND:          %08x", data);
 }
 
 int readAdcAverage(int count) { 
@@ -211,45 +211,53 @@ int readAdcAverage(int count) {
   return sum / count;
 }
 
-CLI_VARIABLE_HEXINT(cmd, 0x000a7247);
+CLI_VARIABLE_HEXINT(cmd, 0xa3243);
+int auxResp;
+uint32_t doCmd(uint32_t cmd, int repeat) { 
+  uint32_t rval = -1;
+  while(repeat-- > 0) {
+    uint32_t pkt = readPacket(10000, 900);
+    if ((pkt & 0x80000) == 0x80000) {
+        rval = pkt;
+        delay(3);
+        sendPacket(cmd, 20);
+    } else {
+      auxResp = pkt;
+    }
+  } 
+  return rval;
+}
 
-
+uint16_t bitReverse(uint16_t x, int bits) { 
+  int rval = 0;
+  while(bits-- > 0) { 
+    rval = rval << 1;
+    rval |= x & 0x1;
+    x = x >> 1;
+  }
+  return rval;
+}
 void loop() {
   j.run();
   int before, after;
 
-  if (millis() == 30000 || j.jw.updateInProgress)
+  if (cmd == 1) ESP.restart();
+  if (millis() == 30000 || j.jw.updateInProgress || cmd == 0)
     return;
-  uint32_t pkt1 = readPacket(10000, 900);
-  if ((pkt1 & 0x80000) == 0x80000) {
-      delay(3);
-      if ((millis() / 15000) % 2 == 1)
-        sendPacket(cmd, 20);
-      else
-        sendPacket(cmd, 20);
-  }
-  
- #if 0 
-  uint32_t pkt2 = readPacket(1000, 550);
-  uint32_t pkt3 = readPacket(1000, 900);
 
-  delayUs(2000);
-  sendPacket(0x000ab247, 20);
+  int repeat = 8;
+  int cmdResp = doCmd(cmd, repeat);
+  int inTemp =  doCmd(0x90152, repeat);
+  int outTemp = doCmd(0x90350, repeat);
+  int flow =    doCmd(0x902d3, repeat);
 
-  if (1) { 
-    delay(3);
-    for (int i = 0; i < 3; i++) {
-      before = readAdcAverage(20);
-      digitalWrite(1, 1);
-      delayUs(500);
-      after = readAdcAverage(20);
-      digitalWrite(1, 0);
-      delayUs(700);
-    }
-  //  OUT("pulse %d %d diff %d", before, after, before-after);
-  }
-#endif
-  OUT("RECV: %08x", (int)pkt1);
+  int c = cmd;
+  int in = bitReverse((inTemp & 0xff0) >> 4, 8);
+  int out = bitReverse((outTemp & 0xff0) >> 4, 8);
+  int f = bitReverse((flow & 0xff0) >> 4, 8);
+  int setT = bitReverse((cmdResp & 0xf00) >> 8, 4);
+  OUT("CMD: %05x %05x %05x %05x %05x %05x (pl=%02d in=%02d out=%02d fl=%02d)",
+    c, cmdResp, auxResp, inTemp, outTemp, flow, setT, in, out, f); 
 }
 
 void loop2() {
