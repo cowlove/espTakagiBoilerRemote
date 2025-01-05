@@ -211,7 +211,7 @@ int readAdcAverage(int count) {
   return sum / count;
 }
 
-CLI_VARIABLE_HEXINT(cmd, 0xa3243);
+CLI_VARIABLE_HEXINT(cmd, 2);
 int auxResp;
 uint32_t doCmd(uint32_t cmd, int repeat) { 
   uint32_t rval = -1;
@@ -237,6 +237,9 @@ uint16_t bitReverse(uint16_t x, int bits) {
   }
   return rval;
 }
+
+int setTempCmd = 0xa0243; // lowest setting
+
 void loop() {
   j.run();
   int before, after;
@@ -244,20 +247,30 @@ void loop() {
   if (cmd == 1) ESP.restart();
   if (millis() == 30000 || j.jw.updateInProgress || cmd == 0)
     return;
+  if (cmd > 0x10) 
+    setTempCmd = cmd;
 
   int repeat = 8;
-  int cmdResp = doCmd(cmd, repeat);
+  int cmdResp = doCmd(setTempCmd, repeat);
   int inTemp =  doCmd(0x90152, repeat);
   int outTemp = doCmd(0x90350, repeat);
   int flow =    doCmd(0x902d3, repeat);
 
-  int c = cmd;
   int in = bitReverse((inTemp & 0xff0) >> 4, 8);
   int out = bitReverse((outTemp & 0xff0) >> 4, 8);
   int f = bitReverse((flow & 0xff0) >> 4, 8);
   int setT = bitReverse((cmdResp & 0xf00) >> 8, 4);
   OUT("CMD: %05x %05x %05x %05x %05x %05x (pl=%02d in=%02d out=%02d fl=%02d)",
-    c, cmdResp, auxResp, inTemp, outTemp, flow, setT, in, out, f); 
+    setTempCmd, cmdResp, auxResp, inTemp, outTemp, flow, setT, in, out, f); 
+
+  if (cmd == 2) {
+    setTempCmd = 0xa0243; // 37 degC
+    if (in > 15) setTempCmd = 0xad247; // 50
+    if (in > 20) setTempCmd = 0xa3243; // 55
+    if (in > 25) setTempCmd = 0xab247; // 60
+    if (in > 40) setTempCmd = 0xa7247; // 70
+    if (in > 50) setTempCmd = 0xaf243; // 75
+  }
 }
 
 void loop2() {
