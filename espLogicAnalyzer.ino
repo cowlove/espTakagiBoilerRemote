@@ -250,26 +250,48 @@ void loop() {
   if (cmd > 0x10) 
     setTempCmd = cmd;
 
-  int repeat = 8;
-  int cmdResp = doCmd(setTempCmd, repeat);
-  int inTemp =  doCmd(0x90152, repeat);
-  int outTemp = doCmd(0x90350, repeat);
-  int flow =    doCmd(0x902d3, repeat);
 
-  int in = bitReverse((inTemp & 0xff0) >> 4, 8);
-  int out = bitReverse((outTemp & 0xff0) >> 4, 8);
-  int f = bitReverse((flow & 0xff0) >> 4, 8);
-  int setT = bitReverse((cmdResp & 0xf00) >> 8, 4);
-  OUT("CMD: %05x %05x %05x %05x %05x %05x (pl=%02d in=%02d out=%02d fl=%02d)",
-    setTempCmd, cmdResp, auxResp, inTemp, outTemp, flow, setT, in, out, f); 
+  if (cmd == 3) { 
+    int cpkt = -1;
+    int f1pkt = readPacket(150000, 900);
+    if ((f1pkt != -1) && ((f1pkt & 0x80000) == 0x80000)) {
+        cpkt = readPacket(1000, 500);
+    } 
+    int f2pkt = readPacket(2000, 900);
+    if (cpkt != -1) 
+      OUT("PAN: %05x %05x %05x", cpkt, f1pkt, f2pkt);
+  } else { 
+    int repeat = 8;
+    int cmdResp = doCmd(setTempCmd, repeat);
+    int inTemp =  doCmd(0x90152, repeat);
+    int outTemp = doCmd(0x90350, repeat);
+    int flow =    doCmd(0x902d3, repeat);
 
-  if (cmd == 2) {
-    setTempCmd = 0xa0243; // 37 degC
-    if (in > 15) setTempCmd = 0xad247; // 50
-    if (in > 20) setTempCmd = 0xa3243; // 55
-    if (in > 25) setTempCmd = 0xab247; // 60
-    if (in > 40) setTempCmd = 0xa7247; // 70
-    if (in > 50) setTempCmd = 0xaf243; // 75
+    int in = bitReverse((inTemp & 0xff0) >> 4, 8);
+    int out = bitReverse((outTemp & 0xff0) >> 4, 8);
+    int f = bitReverse((flow & 0xff0) >> 4, 8);
+    int setT = bitReverse((cmdResp & 0xf00) >> 8, 4);
+    OUT("CMD: %05x %05x %05x %05x %05x %05x (pl=%02d in=%02d out=%02d fl=%02d)",
+      setTempCmd, cmdResp, auxResp, inTemp, outTemp, flow, setT, in, out, f); 
+
+    if (cmdResp == 0xc8856) { 
+      OUT("FURNACE RESET");
+      j.run(); 
+      doCmd(0xa3641, 20);
+      j.run();
+      doCmd(0xa3a41, 20);
+      j.run();
+      doCmd(0xa0243, 20);
+    }
+
+    if (cmd == 2) {
+      setTempCmd = 0xa0243; // 37 degC
+      if (in > 15) setTempCmd = 0xad247; // 50
+      if (in > 20) setTempCmd = 0xa3243; // 55
+      if (in > 25) setTempCmd = 0xab247; // 60
+      if (in > 40) setTempCmd = 0xa7247; // 70
+      if (in > 50) setTempCmd = 0xaf243; // 75
+    }
   }
 }
 
