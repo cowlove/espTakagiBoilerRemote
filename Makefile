@@ -10,16 +10,23 @@ else
 	BUILD_EXTRA_FLAGS += -DI2S
 endif
 
-
 GIT_VERSION := "$(shell git describe --abbrev=4 --dirty --always --tags)"
 BUILD_EXTRA_FLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\"
 
-
-csim:       	
-	g++ -x c++ -g espLogicAnalyzer.ino -o $@ -DESP32 -DCSIM -DUBUNTU -I./ -I${HOME}/Arduino/lib -I ${HOME}/Arduino/libraries/esp32jimlib/src/ 
-
-
 include ${HOME}/Arduino/libraries/makeEspArduino/makeEspArduino.mk
+
+
+.PHONY: ${MAIN_NAME}_csim
+
+csim: ${MAIN_NAME}_csim
+	cp $< $@
+
+${MAIN_NAME}_csim:  
+	g++ -x c++ -g ${MAIN_NAME}.ino -o $@ -DESP32 -DCSIM -DUBUNTU \
+	-I./ -I${HOME}/Arduino/lib -I ${HOME}/Arduino/libraries/esp32jimlib/src/ 
+
+
+csim:	${MAIN_NAME}_csim
 
 fixtty:
 	stty -F ${UPLOAD_PORT} -hupcl -crtscts -echo raw 921600 
