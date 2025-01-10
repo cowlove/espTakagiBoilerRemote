@@ -28,9 +28,8 @@ struct ESP32S3miniNeoPixel {
     if (firstRun)
       pixels.begin();
     firstRun = false;
-    int maxLum = millis() % 150;
     pixels.clear();
-    pixels.setPixelColor(0, 0, maxLum, 0);
+    pixels.setPixelColor(0, random() * 150, random() * 150, random() * 150);
     pixels.show();    
   }
 };
@@ -77,6 +76,7 @@ uint32_t readPacket(uint32_t leadin, int pulsewidth) {
   uint32_t lastLow = startMicros;
   int tmo = 500000;
   j.run();
+  led.set(1);
 
   while(true) { 
     uint32_t now = micros();
@@ -195,17 +195,21 @@ void loop() {
 
     int in = bitReverse((inTemp & 0xff0) >> 4, 8);
     int out = bitReverse((outTemp & 0xff0) >> 4, 8);
-    int f = bitReverse((flow & 0xff0) >> 4, 8);
+    int fl = bitReverse((flow & 0xff0) >> 4, 8);
     int setT = bitReverse((cmdResp & 0xf00) >> 8, 4);
     OUT("CMD: %05x %05x %05x %05x %05x %05x (pl=%02d in=%02d out=%02d fl=%02d)",
-      setTempCmd, cmdResp, auxResp, inTemp, outTemp, flow, setT, in, out, f); 
+      setTempCmd, cmdResp, auxResp, inTemp, outTemp, flow, setT, in, out, fl); 
 
-    if (cmdResp == 0xc8856) { 
-      OUT("FURNACE RESET");
-      doCmd(0xa3641, 20);
-      doCmd(0xa3a41, 20);
-      doCmd(0xa0243, 20);
-    }
+    static int resetCount = 0;
+    if ((cmdResp == 0xc8856) || (fl > 3 && out - in < 5)) { 
+      if (resetCount++ > 3) {
+        OUT("FURNACE RESET");
+        doCmd(0xa3641, 20);
+        doCmd(0xa3a41, 20);
+        doCmd(0xa0243, 20);
+      }
+    } else
+      resetCount = 0;
     if (cmd == 0) {
       // MODE 0 automatic temperature control based on inlet temperature 
       setTempCmd = 0xa0243; // 37 degC
