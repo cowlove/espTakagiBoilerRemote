@@ -7,74 +7,56 @@
 #define ADC1_CHANNEL_1 0
 int adc1_get_raw(int) { return 0; }
 #define delayUs(x) delayMicroseconds(x)
+#define NEO_GRB 0
+#define NEO_KHZ800 0
+struct Adafruit_NeoPixel {
+  Adafruit_NeoPixel(int, int, int) {}
+  static int Color(int, int, int) { return 0; }
+  void begin() {}
+  void setPixelColor(int, int a = 0, int b = 0, int c = 0) {}
+  void show() {}
+  void clear() {}
+};
 #endif
 
 #include "RollingLeastSquares.h"
-//Adafruit_NeoPixel pixels(1, 21, NEO_GRB + NEO_KHZ800);
 
-unsigned long lastTimePrinted;
-unsigned long loopTime = 0;
+struct ESP32S3miniNeoPixel {
+  Adafruit_NeoPixel pixels = Adafruit_NeoPixel(1, 21, NEO_GRB + NEO_KHZ800);
+  bool firstRun = true;
+  void set(int) {
+    if (firstRun)
+      pixels.begin();
+    firstRun = false;
+    int maxLum = millis() % 150;
+    pixels.clear();
+    pixels.setPixelColor(0, 0, maxLum, 0);
+    pixels.show();    
+  }
+};
 
+bool waitFor(bool level, uint32_t tmo);
+uint32_t readPacket(uint32_t leadin, int pulsewidth);
+void sendPacket(uint32_t data, int bytes);
+uint16_t bitReverse(uint16_t x, int bits); 
+uint32_t doCmd(uint32_t cmd, int repeat);
 
 JStuff j;
+ESP32S3miniNeoPixel led;
+CLI_VARIABLE_HEXINT(cmd, 0);
+int auxResp;
 
 void setup() {
     Serial.begin(921600);
     analogRead(1);
+    pinMode(1, OUTPUT);
     j.mqtt.active = true;
     j.jw.debug = true;
-    pinMode(1, OUTPUT);
 }
 
-//RollingLeastSquaresStatic<int, float, 4> avg;
-
-uint32_t lastMicro = 0;
-int reads = 0;
-
-
-const int threshold = 2000;
-const int deadband = 20;
-const int histSize = 6;
-
-uint32_t lastChangeTime = 0;
-
-struct Delay {
-  static const int size = histSize;
-  int data[size];
-  int index = 0;
-  int delay(int val) { 
-    int rval = data[index];
-    data[index] = val;
-    if (++index >= size)
-      index = 0;
-    return rval;
-  }
-} dly;
-
-struct Averager {
-  static const int size = histSize;
-  int data[size];
-  int index = 0;
-  void add(uint16_t d) {
-    data[index] = d;
-    if (++index >= size)
-      index = 0;
-  }
-  uint16_t average() { 
-    int sum = 0;
-    for(int i = 0; i < size; i++)
-      sum += data[i];
-    return sum / size;
-  }
-  int error() {
-    int sum = 0;
-    for(int i = 0; i < size - 1; i++)
-      sum += (((int)data[(index + i) % size]) - ((int)(data[(index + i + 1) % size])));
-    return abs(sum) / size;
-  }
-} avg1, avg2;
-
-Averager avg;
+//////////////////////////////
+// wait for either a high or low level, wait up to tmo microseconds
+RollingAverage<int,6> avg;
 int vlevel = 2100;
 bool waitFor(bool level, uint32_t tmo) { 
   uint32_t startMicros = micros();
@@ -88,10 +70,14 @@ bool waitFor(bool level, uint32_t tmo) {
   }
 }
 
+/////////////////////////////////////
+// read a packet, waiting for at least a leadin high period of at least leadin ms
 uint32_t readPacket(uint32_t leadin, int pulsewidth) { 
   uint32_t startMicros = micros();
   uint32_t lastLow = startMicros;
   int tmo = 500000;
+  j.run();
+
   while(true) { 
     uint32_t now = micros();
     uint16_t x = adc1_get_raw(ADC1_CHANNEL_1);//analogRead(1);
@@ -107,8 +93,8 @@ uint32_t readPacket(uint32_t leadin, int pulsewidth) {
     if (now - lastLow > leadin)
       break;
   }
-  uint32_t rval = 0;
-  int bits = 0;
+
+  int rval = 0, bits = 0;
   while(1) { 
     if (!waitFor(0, (bits == 0) ? tmo : 2000))
       break;
@@ -121,12 +107,12 @@ uint32_t readPacket(uint32_t leadin, int pulsewidth) {
       rval = rval | 0x1;
     bits++;
   }
-  //OUT("RECV: %08x %d", rval, bits);
+  LOG(2, "RECV: %08x %d", rval, bits);
   return rval;
 }
 
-bool toggle = 0;
-
+/////////////////////////////
+// send a packet
 void sendPacket(uint32_t data, int bytes) { 
   int longWidth = 850;
   int shortWidth = 300;
@@ -146,19 +132,9 @@ void sendPacket(uint32_t data, int bytes) {
       delayUs(period - shortWidth);
     }
   }
-  //OUT("SEND:          %08x", data);
+  LOG(2, "SEND:          %08x", data);
 }
 
-int readAdcAverage(int count) { 
-  int sum = 0;
-  for(int i = 0; i < count; i++) {
-    sum += adc1_get_raw(ADC1_CHANNEL_1);//analogRead(1);
-  }
-  return sum / count;
-}
-
-CLI_VARIABLE_HEXINT(cmd, 2);
-int auxResp;
 uint32_t doCmd(uint32_t cmd, int repeat) { 
   uint32_t rval = -1;
   while(repeat-- > 0) {
@@ -184,19 +160,21 @@ uint16_t bitReverse(uint16_t x, int bits) {
   return rval;
 }
 
-int setTempCmd = 0xa0243; // lowest setting
+int setTempCmd;
+
+// CMD modes:
+// 0 pause and wait for OTA 
+// 1 reboot 
+// 2 automatic temperature control based on inlet temp
+// > 0x10: interpret cmd as panel packet and repeatedly send it
 
 void loop() {
   j.run();
-  int before, after;
 
   if (cmd == 1) ESP.restart();
-  if (millis() == 30000 || j.jw.updateInProgress || cmd == 0)
-    return;
-  if (cmd > 0x10) 
-    setTempCmd = cmd;
-
-
+  if (j.jw.updateInProgress || cmd == 2) return;
+  if (cmd > 0x10) setTempCmd = cmd;
+  
   if (cmd == 3) { 
     // MODE 3 - don't send packets, infer timing and read control panel packet 
     // in addition to furnace packets 
@@ -224,16 +202,12 @@ void loop() {
 
     if (cmdResp == 0xc8856) { 
       OUT("FURNACE RESET");
-      j.run(); 
       doCmd(0xa3641, 20);
-      j.run();
       doCmd(0xa3a41, 20);
-      j.run();
       doCmd(0xa0243, 20);
     }
-
-    if (cmd == 2) {
-      // MODE 2 automatic temperature control based on inlet temperature 
+    if (cmd == 0) {
+      // MODE 0 automatic temperature control based on inlet temperature 
       setTempCmd = 0xa0243; // 37 degC
       if (in > 15) setTempCmd = 0xad247; // 50
       if (in > 20) setTempCmd = 0xa3243; // 55
@@ -242,30 +216,4 @@ void loop() {
       if (in > 50) setTempCmd = 0xaf243; // 75
     }
   }
-}
-
-void loop2() {
-  j.run();
-  if (j.jw.updateInProgress || millis() > 30000)
-    return;
-  uint32_t now = micros();
-  uint16_t x = adc1_get_raw(ADC1_CHANNEL_1);//analogRead(1);
-
-  avg1.add(dly.delay(x));
-  avg2.add(x);
-  reads++;
-
-  if (lastMicro / 1000000 != now / 1000000) {  
-    //OUT("0 0 poop %04d %04d %d", avg1.average(), x, reads);
-    reads = 0;
-  }
-
-  //printf("%08d 0 %04d\n", micros(), x);
-  if ((toggle && (avg1.average() - deadband > threshold) && (avg2.average() < threshold)) ||
-      (!toggle && (avg1.average() + deadband < threshold) && (avg2.average() > threshold))) {
-    toggle = !toggle; 
-    //OUT("%d %d", avg1.average() / 1, (int)(now - lastChangeTime) / 1);
-    lastChangeTime = now;
-  }
-  lastMicro = now;
 }
