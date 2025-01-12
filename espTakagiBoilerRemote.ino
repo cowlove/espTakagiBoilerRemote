@@ -4,19 +4,6 @@
 #include "driver/adc.h"
 #else // #ifndef UBUNTU
 #include "ESP32sim_ubuntu.h"
-#define ADC1_CHANNEL_1 0
-int adc1_get_raw(int) { return 0; }
-#define delayUs(x) delayMicroseconds(x)
-#define NEO_GRB 0
-#define NEO_KHZ800 0
-struct Adafruit_NeoPixel {
-  Adafruit_NeoPixel(int, int, int) {}
-  static int Color(int, int, int) { return 0; }
-  void begin() {}
-  void setPixelColor(int, int a = 0, int b = 0, int c = 0) {}
-  void show() {}
-  void clear() {}
-};
 #endif
 
 #include "RollingLeastSquares.h"
@@ -34,19 +21,27 @@ struct ESP32S3miniNeoPixel {
   }
 };
 
+struct StdLED : public ESP32S3miniNeoPixel {
+  void set(int v) { 
+    ESP32S3miniNeoPixel::set(v);
+  }
+};
+
 bool waitFor(bool level, uint32_t tmo);
 uint32_t readPacket(uint32_t leadin, int pulsewidth);
 void sendPacket(uint32_t data, int bytes);
-uint16_t bitReverse(uint16_t x, int bits); 
+uint16_t bitReverseX(uint16_t x, int bits); 
 uint32_t doCmd(uint32_t cmd, int repeat);
 
 JStuff j;
-ESP32S3miniNeoPixel led;
+StdLED led;
 CLI_VARIABLE_HEXINT(cmd, 0);
 int auxResp;
 
+int start = 0;
 void setup() {
-    Serial.begin(921600);
+    start = micros();
+    Serial.begin(115200);
     analogRead(1);
     pinMode(1, OUTPUT);
     j.mqtt.active = true;
@@ -75,6 +70,7 @@ uint32_t readPacket(uint32_t leadin, int pulsewidth) {
   uint32_t startMicros = micros();
   uint32_t lastLow = startMicros;
   int tmo = 500000;
+  printf("Start %f sec\n", start / 1000000.0);
   j.run();
   led.set(1);
 
@@ -150,7 +146,7 @@ uint32_t doCmd(uint32_t cmd, int repeat) {
   return rval;
 }
 
-uint16_t bitReverse(uint16_t x, int bits) { 
+uint16_t bitReverseX(uint16_t x, int bits) { 
   int rval = 0;
   while(bits-- > 0) { 
     rval = rval << 1;
@@ -170,7 +166,6 @@ int setTempCmd;
 
 void loop() {
   j.run();
-
   if (cmd == 1) ESP.restart();
   if (j.jw.updateInProgress || cmd == 2) return;
   if (cmd > 0x10) setTempCmd = cmd;
@@ -193,23 +188,24 @@ void loop() {
     int outTemp = doCmd(0x90350, repeat);
     int flow =    doCmd(0x902d3, repeat);
 
-    int in = bitReverse((inTemp & 0xff0) >> 4, 8);
-    int out = bitReverse((outTemp & 0xff0) >> 4, 8);
-    int fl = bitReverse((flow & 0xff0) >> 4, 8);
-    int setT = bitReverse((cmdResp & 0xf00) >> 8, 4);
+    int in = bitReverseX((inTemp & 0xff0) >> 4, 8);
+    int out = bitReverseX((outTemp & 0xff0) >> 4, 8);
+    int fl = bitReverseX((flow & 0xff0) >> 4, 8);
+    int setT = bitReverseX((cmdResp & 0xf00) >> 8, 4);
     OUT("CMD: %05x %05x %05x %05x %05x %05x (pl=%02d in=%02d out=%02d fl=%02d)",
       setTempCmd, cmdResp, auxResp, inTemp, outTemp, flow, setT, in, out, fl); 
 
-    static int resetCount = 0;
+    static int resetCountDown = 0;
     if ((cmdResp == 0xc8856) || (fl > 3 && out - in < 5)) { 
-      if (resetCount++ > 3) {
+      if (resetCountDown++ > 3) {
         OUT("FURNACE RESET");
         doCmd(0xa3641, 20);
         doCmd(0xa3a41, 20);
         doCmd(0xa0243, 20);
       }
     } else
-      resetCount = 0;
+      resetCountDown = 0;
+    
     if (cmd == 0) {
       // MODE 0 automatic temperature control based on inlet temperature 
       setTempCmd = 0xa0243; // 37 degC
