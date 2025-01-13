@@ -118,14 +118,14 @@ void sendPacket(uint32_t data, int bytes) {
     uint32_t startPulse = micros();
     if (longPulse) {
       digitalWrite(1, 1);
-      delayUs(longWidth);
+      delayMicroseconds(longWidth);
       digitalWrite(1, 0);
-      delayUs(period - longWidth);
+      delayMicroseconds(period - longWidth);
     } else { 
       digitalWrite(1, 1);
-      delayUs(shortWidth);
+      delayMicroseconds(shortWidth);
       digitalWrite(1, 0);
-      delayUs(period - shortWidth);
+      delayMicroseconds(period - shortWidth);
     }
   }
   LOG(2, "SEND:          %08x", data);
